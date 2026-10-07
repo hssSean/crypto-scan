@@ -4,5 +4,6 @@
   "min_score": 4,
   "min_stop_pct": 1.0,
   "top_n": 50,
-  "lookback_min": 60
+  "lookback_min": 60,
+  "skip_near_resistance": true
 }

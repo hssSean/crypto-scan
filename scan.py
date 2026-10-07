@@ -135,12 +135,40 @@ def light(h, l, c):
     return out
 
 
+def pivots(x, L, hi):
+    """與 ta.pivothigh / ta.pivotlow 相同概念：左右各 L 根都比它低（高）。"""
+    out = np.zeros(len(x), bool)
+    for p in range(L, len(x) - L):
+        w = x[p - L:p + L + 1]
+        out[p] = (x[p] == w.max() if hi else x[p] == w.min()) and (w == x[p]).sum() == 1
+    return out
+
+
+def res_above(t4, h4, l4, ph, pl, a4, j4, entry):
+    """4h 已確認轉折、最近 30 天、0.5×ATR 內合併；回傳進場價上方最近壓力區的下緣（沒有則 None）。"""
+    conf, A = j4 - 5, a4[j4]
+    Z = []
+    for q in range(max(0, conf - 200), conf + 1):
+        if t4[q] < t4[j4] - 30 * D1 or not (ph[q] or pl[q]):
+            continue
+        for p in ([h4[q]] if ph[q] else []) + ([l4[q]] if pl[q] else []):
+            for z in Z:
+                if abs(z[0] - p) <= 0.5 * A:
+                    z[0] = (z[0] * z[1] + p) / (z[1] + 1)
+                    z[1] += 1
+                    break
+            else:
+                Z.append([p, 1])
+    bots = [z[0] - 0.25 * A for z in Z if z[0] - 0.25 * A > entry]
+    return min(bots) if bots else None
+
+
 def last_closed(t, ms, tc):
     return np.searchsorted(t + ms, tc, side="right") - 1
 
 
 def wr(s):
-    return "約 71–74%" if s >= 8 else "約 66–70%" if s == 7 else "約 59–63%" if s == 6 else "約 56–60%" if s == 5 else "約 54%" if s == 4 else "約 43–50%"
+    return "約 66–70%" if s >= 7 else "約 62–64%" if s == 6 else "約 59–63%" if s == 5 else "約 56–59%" if s == 4 else "約 43–50%"
 
 
 # ───────────── 幣池：前 50 名（30 日平均成交額），每天更新一次 ─────────────
@@ -191,6 +219,8 @@ def analyse(sym, btc, since_ms):
     lD, l4s = light(hD, lD, cD), light(h4, l4, c4)
     eD, aD = ema(cD, 20), atr(hD, lD, cD, 14)
     e4 = ema(c4, 20)
+    a4 = atr(h4, l4, c4, 14)
+    ph4, pl4 = pivots(h4, 5, True), pivots(l4, 5, False)
     a1 = atr(h1, l1, c1, 14)
     r = rsi(c)
     a15 = atr(h, l, c, 14)
@@ -221,8 +251,11 @@ def analyse(sym, btc, since_ms):
         score = int(sum(bool(v) for v in items.values()))
         if score < CFG["min_score"]:
             continue
+        res = res_above(t4, h4, l4, ph4, pl4, a4, j4, c[k]) if np.isfinite(a4[j4]) else None
+        if CFG.get("skip_near_resistance", True) and res is not None and res - c[k] < 0.5 * atr1:
+            continue                                            # 上方 0.5R 內就有壓力區 → 跳過
         out.append(dict(sym=sym, bar=int(t[k]), entry=float(c[k]), stop=float(c[k] - atr1), target=float(c[k] + atr1),
-                        score=score, items=[n for n, v in items.items() if v]))
+                        score=score, items=[n for n, v in items.items() if v], res=res))
     return out, (t, h, l, c)
 
 
@@ -255,11 +288,13 @@ def signal_msg(s, last_close):
     bar = datetime.fromtimestamp((s["bar"] + M15) / 1000, TW).strftime("%m/%d %H:%M")
     moved = (last_close - s["entry"]) / rk
     hint = "可以照計畫進" if -0.5 < moved < 0.3 else ("已往目標走一段，別追" if moved >= 0.3 else "已接近止損，小心")
+    res_txt = "30 天內沒有" if s.get("res") is None else f"{fmt(s['res'])}（離進場 {(s['res'] - s['entry']) / rk:.1f}R）"
     title = f"【{s['sym'].replace('USDT', '')} 做多】加分 {s['score']}/8（歷史勝率{wr(s['score'])}）"
     body = (f"訊號 K 線收盤：{bar}（台灣）\n"
             f"進場 {fmt(s['entry'])}｜止損 {fmt(s['stop'])}（{-rk / s['entry']:+.2%}）｜目標 {fmt(s['target'])}\n"
             f"數量約 {qty:.4g} 顆（打到止損賠 {CFG['equity_usdt'] * CFG['risk_pct'] / 100:.2f}U）\n"
             f"現價 {fmt(last_close)}（{(last_close / s['entry'] - 1):+.2%}）→ {hint}\n"
+            f"上方壓力：{res_txt}\n"
             f"符合：{'、'.join(s['items'])}")
     return title, body
 
