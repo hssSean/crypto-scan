@@ -1,8 +1,10 @@
 name: scan
 
+# 接力模式：一輪連續跑約 5 小時 40 分、每 15 分鐘掃描一次，結束前自動觸發下一輪。
+# GitHub 的 schedule 常被延遲或跳過，所以只當備援；如果接力斷了，到 Actions 按一次 Run workflow 就會重新開始。
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7 */6 * * *"
   workflow_dispatch:
     inputs:
       test:
@@ -12,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: scan
@@ -20,7 +23,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 355
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,16 +31,35 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python scan.py
+      - name: 測試訊息
+        if: ${{ inputs.test }}
+        run: python scan.py --test
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      - name: 掃描（每 15 分鐘一次，連續約 5 小時 40 分）
+        if: ${{ !inputs.test }}
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT: ${{ secrets.TG_CHAT }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           EQUITY_USDT: ${{ secrets.EQUITY_USDT }}
-          TEST_MESSAGE: ${{ inputs.test }}
-      - name: 保存狀態（追蹤中的訊號、幣池）
         run: |
           git config user.name "scan-bot"
           git config user.email "scan-bot@users.noreply.github.com"
-          git add state.json
-          git diff --cached --quiet || (git commit -m "update state" && git push)
+          end=$(( $(date +%s) + 20400 ))
+          while [ "$(date +%s)" -lt "$end" ]; do
+            git pull -q --rebase || true                      # 拿到你在網頁上改的 config.json
+            python scan.py || echo "這輪掃描失敗，下一輪再試"
+            git add state.json
+            git diff --cached --quiet || { git commit -q -m "update state" && git push -q; } || echo "狀態推送失敗，下一輪再試"
+            now=$(date +%s); next=$(( (now / 900 + 1) * 900 + 20 ))
+            [ "$next" -lt "$end" ] || break
+            sleep $(( next - now ))
+          done
+      - name: 接力下一輪
+        if: ${{ !inputs.test && !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run scan.yml -R "${{ github.repository }}"
