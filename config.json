@@ -1,0 +1,8 @@
+{
+  "equity_usdt": 1000,
+  "risk_pct": 0.5,
+  "min_score": 5,
+  "min_stop_pct": 1.0,
+  "top_n": 50,
+  "lookback_min": 60
+}
