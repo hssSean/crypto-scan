@@ -6,5 +6,6 @@
   "top_n": 100,
   "lookback_min": 60,
   "skip_near_resistance": true,
-  "shallow_pullback": true
+  "shallow_pullback": true,
+  "min_breadth": 4
 }

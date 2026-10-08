@@ -243,7 +243,7 @@ def analyse(sym, btc, since_ms):
         if not (lD[jD] == 1 and l4s[j4] == 1 and (dip or (shallow and CFG.get("shallow_pullback", True)))):
             continue
         atr1 = a1[j1]
-        if not np.isfinite(atr1) or atr1 / c[k] < CFG["min_stop_pct"] / 100:
+        if not np.isfinite(atr1) or atr1 <= 0:
             continue
         br = brsi.get(int(t[k]), np.nan)
         items = {
@@ -257,14 +257,30 @@ def analyse(sym, btc, since_ms):
             "日線強": (cD[jD] - eD[jD]) / aD[jD] >= 1.7,
         }
         score = int(sum(bool(v) for v in items.values()))
-        if score < (CFG["min_score"] if dip else max(6, CFG["min_score"])):
-            continue
         res = res_above(t4, h4, l4, ph4, pl4, a4, j4, c[k]) if np.isfinite(a4[j4]) else None
-        if CFG.get("skip_near_resistance", True) and res is not None and res - c[k] < 0.5 * atr1:
-            continue                                            # 上方 0.5R 內就有壓力區 → 跳過
+        # 先全部收集（廣度要算所有急跌事件），過濾在 finalize() 做
         out.append(dict(sym=sym, bar=int(t[k]), entry=float(c[k]), stop=float(c[k] - atr1), target=float(c[k] + atr1),
-                        score=score, items=[n for n, v in items.items() if v], res=res, kind="急跌" if dip else "淺回調"))
+                        score=score, items=[n for n, v in items.items() if v], res=res, kind="急跌" if dip else "淺回調",
+                        stop_ok=bool(atr1 / c[k] >= CFG["min_stop_pct"] / 100),
+                        res_ok=not (CFG.get("skip_near_resistance", True) and res is not None and res - c[k] < 0.5 * atr1)))
     return out, (t, h, l, c)
+
+
+def finalize(cands, since_ms):
+    """算廣度（過去 1 小時內同樣出現『日線＋4h 綠、RSI 跌破 30』的幣數，含自己），再套用所有過濾。"""
+    dips = [(c_["bar"], c_["sym"]) for c_ in cands if c_["kind"] == "急跌"]
+    out = []
+    for s in cands:
+        if s["bar"] + M15 <= since_ms or not (s["stop_ok"] and s["res_ok"]):
+            continue
+        s["breadth"] = len({sym for b, sym in dips if s["bar"] - H1 <= b <= s["bar"]})
+        if s["kind"] == "急跌":
+            if s["score"] < CFG["min_score"] or s["breadth"] < CFG.get("min_breadth", 1):
+                continue
+        elif s["score"] < max(6, CFG["min_score"]):
+            continue
+        out.append(s)
+    return out
 
 
 # ───────────── 通知 ─────────────
@@ -298,13 +314,20 @@ def signal_msg(s, last_close):
     hint = "可以照計畫進" if -0.5 < moved < 0.3 else ("已往目標走一段，別追" if moved >= 0.3 else "已接近止損，小心")
     res_txt = "30 天內沒有" if s.get("res") is None else f"{fmt(s['res'])}（離進場 {(s['res'] - s['entry']) / rk:.1f}R）"
     kind = s.get("kind", "急跌")
-    rate = wr(s["score"]) if kind == "急跌" else "約 58–65%"
+    b = s.get("breadth", 0)
+    if kind != "急跌":
+        rate = "約 58–65%"
+    elif b >= 25:
+        kind, rate = "🔥全市場洗盤", "約 66–74%" if s["score"] >= 5 else "約 66–70%"
+    else:
+        rate = wr(s["score"]) if b < 4 else {4: "約 57–60%", 5: "約 59–63%"}.get(s["score"], "約 62–66%")
     title = f"【{s['sym'].replace('USDT', '')} 做多・{kind}】加分 {s['score']}/8（歷史勝率{rate}）"
     body = (f"訊號 K 線收盤：{bar}（台灣）\n"
             f"進場 {fmt(s['entry'])}｜止損 {fmt(s['stop'])}（{-rk / s['entry']:+.2%}）｜目標 {fmt(s['target'])}\n"
             f"數量約 {qty:.4g} 顆（打到止損賠 {CFG['equity_usdt'] * CFG['risk_pct'] / 100:.2f}U）\n"
             f"現價 {fmt(last_close)}（{(last_close / s['entry'] - 1):+.2%}）→ {hint}\n"
             f"上方壓力：{res_txt}\n"
+            f"同時急跌：{b} 個幣（1 小時內，前 {CFG['top_n']} 名）\n"
             f"符合：{'、'.join(s['items'])}")
     return title, body
 
@@ -325,12 +348,15 @@ def run(dry):
     uni = universe(st)
     btc = btc_ctx()
     found = 0
+    cands, last_close = [], {}
     for sym in uni:
         try:
-            sigs, (t, h, l, c) = analyse(sym, btc, since)
+            cs, (t, h, l, c) = analyse(sym, btc, since - H1)       # 多抓 1 小時給廣度用
         except Exception as e:
             print(sym, "失敗：", e)
             continue
+        cands += cs
+        last_close[sym] = float(c[-1])
         a = st["active"].get(sym)
         if a:                                                   # 追蹤進行中的訊號
             m = t > a["bar"]
@@ -349,13 +375,16 @@ def run(dry):
                 r = (c[-1] - a["entry"]) / (a["entry"] - a["stop"])
                 send(f"【{name}】⏱ 12 小時未觸及", f"現價 {fmt(c[-1])}（{r:+.2f}R），這筆結束", dry)
                 del st["active"][sym]
+        time.sleep(0.05)
+    latest = {}
+    for s in finalize(cands, since):
+        latest[s["sym"]] = s                                    # 每個幣只取最新一筆
+    for sym, s in latest.items():
         if sym in st["active"]:
             continue                                            # 一次一筆
-        for s in sigs[-1:]:
-            send(*signal_msg(s, float(c[-1])), dry)
-            st["active"][sym] = s
-            found += 1
-        time.sleep(0.05)
+        send(*signal_msg(s, last_close[sym]), dry)
+        st["active"][sym] = s
+        found += 1
     print(f"\n掃描完成：{len(uni)} 個幣，新訊號 {found} 個，追蹤中 {len(st['active'])} 個")
     if not dry:
         STATE.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -366,23 +395,23 @@ def replay(days):
     uni = universe(st)
     btc = btc_ctx()
     since = int(time.time() * 1000) - days * D1
-    allsig = []
+    cands = []
     for sym in uni:
         try:
-            sigs, _ = analyse(sym, btc, since)
+            cs, _ = analyse(sym, btc, since - H1)
+            cands += cs
         except Exception as e:
             print(sym, "失敗：", e)
-            continue
-        last = -10**15
-        for s in sigs:                                           # 同幣 12 小時內只算一次
-            if s["bar"] - last >= 12 * H1:
-                allsig.append(s)
-                last = s["bar"]
-    allsig.sort(key=lambda s: s["bar"])
+    allsig, last = [], {}
+    for s in sorted(finalize(cands, since), key=lambda s: s["bar"]):   # 同幣 12 小時內只算一次
+        if s["bar"] - last.get(s["sym"], -10**15) >= 12 * H1:
+            allsig.append(s)
+            last[s["sym"]] = s["bar"]
     for s in allsig:
-        print(datetime.fromtimestamp((s["bar"] + M15) / 1000, TW).strftime("%m/%d %H:%M"), s["sym"], f"{s['score']}/8",
-              "進場", fmt(s["entry"]), "止損", fmt(s["stop"]), "符合：" + "、".join(s["items"]))
-    print(f"\n最近 {days} 天（最低加分 {CFG['min_score']}）：{len(allsig)} 個訊號，平均每天 {len(allsig) / days:.1f} 個")
+        print(datetime.fromtimestamp((s["bar"] + M15) / 1000, TW).strftime("%m/%d %H:%M"), s["sym"], s["kind"], f"{s['score']}/8",
+              f"同時急跌 {s['breadth']} 個", "進場", fmt(s["entry"]), "止損", fmt(s["stop"]))
+    print(f"\n最近 {days} 天（最低加分 {CFG['min_score']}、同時急跌 ≥{CFG.get('min_breadth', 1)}）：{len(allsig)} 個訊號，"
+          f"平均每天 {len(allsig) / days:.1f} 個，其中全市場洗盤（≥25）{sum(s['breadth'] >= 25 for s in allsig)} 個")
 
 
 if __name__ == "__main__":
