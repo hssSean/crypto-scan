@@ -189,7 +189,7 @@ def universe(st):
         if base in EXCLUDE or base.endswith(("UP", "DOWN", "BULL", "BEAR")) or base in TRADFI or base[:-1] in TRADFI:
             continue
         cand.append((float(x["quoteVolume"]), s))
-    cand = [s for _, s in sorted(cand, reverse=True)[:90]]
+    cand = [s for _, s in sorted(cand, reverse=True)[:max(90, int(CFG['top_n'] * 1.8))]]
     vol30 = {}
     for s in cand:
         try:
