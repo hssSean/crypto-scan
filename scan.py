@@ -31,6 +31,9 @@ TW = timezone(timedelta(hours=8))
 M15, H1, H4, D1 = 900_000, 3_600_000, 14_400_000, 86_400_000
 EXCLUDE = {"BTC", "ETH", "USDC", "FDUSD", "TUSD", "USDP", "DAI", "BUSD", "EUR", "USDE", "PAXG", "XAUT", "WBTC", "WBETH",
            "BTCDOM", "AEUR", "EURI", "USD1", "BFUSD", "RLUSD"}
+# 代幣化股票／商品（現貨常見「代號＋B」，例如 MSTRB、CRCLB），不是加密貨幣，回測也排除
+TRADFI = set("AAPL AMZN AVGO BABA COIN CRCL EWJ EWY GOOGL GOOG HOOD INTC META MSFT MSTR MU NVDA PLTR QQQ SPY TSLA TSM "
+             "SNDK SPCX AMD NFLX ORCL XAU XAG XPD XPT CL BZ NATGAS COPPER".split())
 S = requests.Session()
 SRC = {"base": "https://fapi.binance.com", "kl": "/fapi/v1/klines", "tick": "/fapi/v1/ticker/24hr", "btc": "BTCUSDT"}
 
@@ -183,7 +186,7 @@ def universe(st):
         if not s.endswith("USDT"):
             continue
         base = s[:-4]
-        if base in EXCLUDE or base.endswith(("UP", "DOWN", "BULL", "BEAR")):
+        if base in EXCLUDE or base.endswith(("UP", "DOWN", "BULL", "BEAR")) or base in TRADFI or base[:-1] in TRADFI:
             continue
         cand.append((float(x["quoteVolume"]), s))
     cand = [s for _, s in sorted(cand, reverse=True)[:90]]
