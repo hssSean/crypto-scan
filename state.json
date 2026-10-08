@@ -32,13 +32,10 @@
   "TRUMPUSDT",
   "FETUSDT",
   "DASHUSDT",
-  "CRCLBUSDT",
   "FILUSDT",
-  "SNDKBUSDT",
   "XPLUSDT",
   "INJUSDT",
   "PENGUUSDT",
-  "SPCXBUSDT",
   "ASTERUSDT",
   "ZROUSDT",
   "DOTUSDT",
@@ -50,7 +47,10 @@
   "ZAMAUSDT",
   "MOVRUSDT",
   "ICPUSDT",
-  "MSTRBUSDT"
+  "POLUSDT",
+  "SANDUSDT",
+  "SEIUSDT",
+  "CAKEUSDT"
  ],
- "uni_date": ""
+ "uni_date": "2026-10-08"
 }
