@@ -180,6 +180,9 @@ def universe(st):
     if st.get("uni_date") == today and st.get("uni"):
         return st["uni"]
     tick = get(SRC["tick"])
+    if "fapi" in SRC["base"]:                                   # 合約：只留加密貨幣（排除美股、港股、商品等 TradFi 合約）
+        coins = {x["symbol"] for x in get("/fapi/v1/exchangeInfo")["symbols"] if x.get("underlyingType") == "COIN"}
+        tick = [x for x in tick if x["symbol"] in coins]
     cand = []
     for x in tick:
         s = x["symbol"]
@@ -235,7 +238,9 @@ def analyse(sym, btc, since_ms):
         jD, j4, j1, jb = last_closed(tD, D1, tc), last_closed(t4, H4, tc), last_closed(t1, H1, tc), last_closed(bt4, H4, tc)
         if min(jD, j4, j1, jb) < 0:
             continue
-        if not (lD[jD] == 1 and l4s[j4] == 1 and r[k] < 30 and r[k - 1] >= 30):
+        dip = r[k] < 30 and r[k - 1] >= 30                    # 急跌：RSI 跌破 30
+        shallow = r[k] < 40 and r[k - 1] >= 40                # 淺回調：RSI 跌破 40（需加分 ≥6）
+        if not (lD[jD] == 1 and l4s[j4] == 1 and (dip or (shallow and CFG.get("shallow_pullback", True)))):
             continue
         atr1 = a1[j1]
         if not np.isfinite(atr1) or atr1 / c[k] < CFG["min_stop_pct"] / 100:
@@ -252,13 +257,13 @@ def analyse(sym, btc, since_ms):
             "日線強": (cD[jD] - eD[jD]) / aD[jD] >= 1.7,
         }
         score = int(sum(bool(v) for v in items.values()))
-        if score < CFG["min_score"]:
+        if score < (CFG["min_score"] if dip else max(6, CFG["min_score"])):
             continue
         res = res_above(t4, h4, l4, ph4, pl4, a4, j4, c[k]) if np.isfinite(a4[j4]) else None
         if CFG.get("skip_near_resistance", True) and res is not None and res - c[k] < 0.5 * atr1:
             continue                                            # 上方 0.5R 內就有壓力區 → 跳過
         out.append(dict(sym=sym, bar=int(t[k]), entry=float(c[k]), stop=float(c[k] - atr1), target=float(c[k] + atr1),
-                        score=score, items=[n for n, v in items.items() if v], res=res))
+                        score=score, items=[n for n, v in items.items() if v], res=res, kind="急跌" if dip else "淺回調"))
     return out, (t, h, l, c)
 
 
@@ -292,7 +297,9 @@ def signal_msg(s, last_close):
     moved = (last_close - s["entry"]) / rk
     hint = "可以照計畫進" if -0.5 < moved < 0.3 else ("已往目標走一段，別追" if moved >= 0.3 else "已接近止損，小心")
     res_txt = "30 天內沒有" if s.get("res") is None else f"{fmt(s['res'])}（離進場 {(s['res'] - s['entry']) / rk:.1f}R）"
-    title = f"【{s['sym'].replace('USDT', '')} 做多】加分 {s['score']}/8（歷史勝率{wr(s['score'])}）"
+    kind = s.get("kind", "急跌")
+    rate = wr(s["score"]) if kind == "急跌" else "約 58–65%"
+    title = f"【{s['sym'].replace('USDT', '')} 做多・{kind}】加分 {s['score']}/8（歷史勝率{rate}）"
     body = (f"訊號 K 線收盤：{bar}（台灣）\n"
             f"進場 {fmt(s['entry'])}｜止損 {fmt(s['stop'])}（{-rk / s['entry']:+.2%}）｜目標 {fmt(s['target'])}\n"
             f"數量約 {qty:.4g} 顆（打到止損賠 {CFG['equity_usdt'] * CFG['risk_pct'] / 100:.2f}U）\n"
