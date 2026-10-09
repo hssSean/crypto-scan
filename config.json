@@ -7,5 +7,6 @@
   "lookback_min": 60,
   "skip_near_resistance": true,
   "shallow_pullback": true,
-  "min_breadth": 4
+  "min_breadth": 4,
+  "daily_status": true
 }

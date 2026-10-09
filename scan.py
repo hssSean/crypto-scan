@@ -33,7 +33,9 @@ EXCLUDE = {"BTC", "ETH", "USDC", "FDUSD", "TUSD", "USDP", "DAI", "BUSD", "EUR", 
            "BTCDOM", "AEUR", "EURI", "USD1", "BFUSD", "RLUSD"}
 # 代幣化股票／商品（現貨常見「代號＋B」，例如 MSTRB、CRCLB），不是加密貨幣，回測也排除
 TRADFI = set("AAPL AMZN AVGO BABA COIN CRCL EWJ EWY GOOGL GOOG HOOD INTC META MSFT MSTR MU NVDA PLTR QQQ SPY TSLA TSM "
-             "SNDK SPCX AMD NFLX ORCL XAU XAG XPD XPT CL BZ NATGAS COPPER".split())
+             "SNDK SPCX AMD NFLX ORCL XAU XAG XPD XPT CL BZ NATGAS COPPER "
+             "SOXL TQQQ SQQQ SPXL UPRO TNA NVDL TSLL MSTU CONL GLD SLV USO TLT IWM DIA ARKK".split())
+GREEN = {}                                                      # 本輪各幣「日線＋4h 都綠」（每日狀態用）
 S = requests.Session()
 SRC = {"base": "https://fapi.binance.com", "kl": "/fapi/v1/klines", "tick": "/fapi/v1/ticker/24hr", "btc": "BTCUSDT"}
 
@@ -196,9 +198,10 @@ def universe(st):
     vol30 = {}
     for s in cand:
         try:
-            k = get(SRC["kl"], symbol=s, interval="1d", limit=32)
-            qv = [float(x[7]) for x in k[:-1]][-30:]
-            if len(qv) >= 30:
+            k = get(SRC["kl"], symbol=s, interval="1d", limit=32)[:-1][-30:]
+            qv = [float(x[7]) for x in k]
+            hi, lo = max(float(x[2]) for x in k), min(float(x[3]) for x in k)
+            if len(qv) >= 30 and lo > 0 and hi / lo - 1 >= 0.03:   # 30 天振幅不到 3% → 穩定幣類（XUSD、U…），排除
                 vol30[s] = float(np.mean(qv))
         except Exception:
             continue
@@ -222,7 +225,8 @@ def analyse(sym, btc, since_ms):
     t, o, h, l, c = kl(sym, "15m", 1000)
     if len(cD) < 60 or len(c4) < 60 or len(c) < 60:
         return [], (t, h, l, c)
-    lD, l4s = light(hD, lD, cD), light(h4, l4, c4)
+    LtD, l4s = light(hD, lD, cD), light(h4, l4, c4)              # 燈號另存，不要蓋掉日線最低價 lD
+    GREEN[sym] = bool(LtD[-1] == 1 and l4s[-1] == 1)
     eD, aD = ema(cD, 20), atr(hD, lD, cD, 14)
     e4 = ema(c4, 20)
     a4 = atr(h4, l4, c4, 14)
@@ -240,7 +244,7 @@ def analyse(sym, btc, since_ms):
             continue
         dip = r[k] < 30 and r[k - 1] >= 30                    # 急跌：RSI 跌破 30
         shallow = r[k] < 40 and r[k - 1] >= 40                # 淺回調：RSI 跌破 40（需加分 ≥6）
-        if not (lD[jD] == 1 and l4s[j4] == 1 and (dip or (shallow and CFG.get("shallow_pullback", True)))):
+        if not (LtD[jD] == 1 and l4s[j4] == 1 and (dip or (shallow and CFG.get("shallow_pullback", True)))):
             continue
         atr1 = a1[j1]
         if not np.isfinite(atr1) or atr1 <= 0:
@@ -340,18 +344,42 @@ def load_state():
         return {}
 
 
+def status_msg(cands, btc, n_uni, now):
+    """每日狀態：讓你知道掃描器正常，以及今天為什麼有／沒有訊號。"""
+    bl4 = btc[0][1]
+    btc_light = {1: "綠", -1: "紅"}.get(int(bl4[-1]), "灰")
+    green = sum(GREEN.values())
+    day0 = now - D1
+    dips = [c_ for c_ in cands if c_["kind"] == "急跌" and c_["bar"] + M15 > day0]
+    passed = finalize(cands, day0)
+    hint = ("目前多數幣不在多頭（這套規則只在『日線＋4h 綠』的幣急跌時出手），沒有訊號是正常的。"
+            "歷史上約 7 成的日子沒有訊號，連續好幾天沒有也很常見。"
+            if btc_light != "綠" or green < 15 else "多頭環境，出現急跌就會通知。")
+    title = f"【1R 助手】每日狀態 {datetime.now(TW).strftime('%m/%d')}"
+    body = (f"掃描器正常（每 15 分鐘，{n_uni} 個幣）\n"
+            f"BTC 4h 燈：{btc_light}\n"
+            f"日線＋4h 都綠的幣：{green} 個\n"
+            f"過去 24 小時：急跌候選 {len(dips)} 個，符合全部條件 {len(passed)} 個\n"
+            f"{hint}")
+    return title, body
+
+
 def run(dry):
     st = load_state()
     st.setdefault("active", {})
     now = int(time.time() * 1000)
     since = now - CFG["lookback_min"] * 60_000                  # 雲端排程可能延遲，往回看一段時間
+    tw_now = datetime.now(TW)
+    status_due = (CFG.get("daily_status", True) and tw_now.hour >= 8
+                  and st.get("status_date") != tw_now.strftime("%Y-%m-%d"))
+    an_since = min(since, now - D1) if status_due else since     # 每日狀態要統計過去 24 小時
     uni = universe(st)
     btc = btc_ctx()
     found = 0
     cands, last_close = [], {}
     for sym in uni:
         try:
-            cs, (t, h, l, c) = analyse(sym, btc, since - H1)       # 多抓 1 小時給廣度用
+            cs, (t, h, l, c) = analyse(sym, btc, an_since - H1)    # 多抓 1 小時給廣度用
         except Exception as e:
             print(sym, "失敗：", e)
             continue
@@ -385,6 +413,9 @@ def run(dry):
         send(*signal_msg(s, last_close[sym]), dry)
         st["active"][sym] = s
         found += 1
+    if status_due:
+        send(*status_msg(cands, btc, len(uni), now), dry)
+        st["status_date"] = tw_now.strftime("%Y-%m-%d")
     print(f"\n掃描完成：{len(uni)} 個幣，新訊號 {found} 個，追蹤中 {len(st['active'])} 個")
     if not dry:
         STATE.write_text(json.dumps(st, ensure_ascii=False, indent=1), encoding="utf-8")
