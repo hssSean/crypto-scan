@@ -1,24 +1,5 @@
 {
  "active": {
-  "ETHFIUSDT": {
-   "sym": "ETHFIUSDT",
-   "bar": 1791815400000,
-   "entry": 0.6972,
-   "stop": 0.6867050874727353,
-   "target": 0.7076949125272648,
-   "score": 4,
-   "items": [
-    "BTC4h綠",
-    "BTC急跌",
-    "4小時急跌",
-    "RSI很低"
-   ],
-   "res": 0.7186526026281744,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 12
-  },
   "CHIPUSDT": {
    "sym": "CHIPUSDT",
    "bar": 1791815400000,
