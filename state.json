@@ -1,26 +1,5 @@
 {
- "active": {
-  "STRKUSDT": {
-   "sym": "STRKUSDT",
-   "bar": 1791810000000,
-   "entry": 0.09954,
-   "stop": 0.09372091673412822,
-   "target": 0.10535908326587179,
-   "score": 5,
-   "items": [
-    "BTC4h綠",
-    "BTC急跌",
-    "波動大",
-    "在4h均線上",
-    "日線強"
-   ],
-   "res": null,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 6
-  }
- },
+ "active": {},
  "uni": [
   "ZECUSDT",
   "SOLUSDT",
