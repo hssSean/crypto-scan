@@ -39,28 +39,6 @@
    "res_ok": true,
    "breadth": 12
   },
-  "TIAUSDT": {
-   "sym": "TIAUSDT",
-   "bar": 1791815400000,
-   "entry": 0.5556,
-   "stop": 0.5412925465317376,
-   "target": 0.5699074534682623,
-   "score": 7,
-   "items": [
-    "BTC4h綠",
-    "BTC急跌",
-    "波動大",
-    "4小時急跌",
-    "RSI很低",
-    "在4h均線上",
-    "日線強"
-   ],
-   "res": 0.6262388954195393,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 12
-  },
   "ETHFIUSDT": {
    "sym": "ETHFIUSDT",
    "bar": 1791815400000,
@@ -100,6 +78,25 @@
    "stop_ok": true,
    "res_ok": true,
    "breadth": 12
+  },
+  "FILUSDT": {
+   "sym": "FILUSDT",
+   "bar": 1791819000000,
+   "entry": 1.1784,
+   "stop": 1.15282321033421,
+   "target": 1.2039767896657898,
+   "score": 4,
+   "items": [
+    "BTC4h綠",
+    "波動大",
+    "4小時急跌",
+    "在4h均線上"
+   ],
+   "res": 1.2057161992733045,
+   "kind": "急跌",
+   "stop_ok": true,
+   "res_ok": true,
+   "breadth": 8
   }
  },
  "uni": [
