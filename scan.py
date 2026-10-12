@@ -12,6 +12,7 @@
 環境變數：TG_TOKEN、TG_CHAT（Telegram）、NTFY_TOPIC（ntfy，可選）
 """
 import argparse
+import csv
 import json
 import os
 import sys
@@ -27,6 +28,9 @@ CFG = json.loads((HERE / "config.json").read_text(encoding="utf-8"))
 if os.environ.get("EQUITY_USDT"):                           # 帳戶資金可放在 GitHub Secrets，不公開
     CFG["equity_usdt"] = float(os.environ["EQUITY_USDT"])
 STATE = HERE / "state.json"
+RESULTS = HERE / "results.csv"                                 # 每筆訊號的實際結果（前向紀錄）
+COST = 0.0007                                                   # 每邊手續費 0.05% ＋ 滑價 0.02%（與研究端同一套）
+RCOLS = ["訊號K收盤_台灣", "幣", "類型", "加分", "同時急跌", "進場", "止損", "目標", "止損距離%", "結果", "出場_台灣", "R", "扣成本R"]
 TW = timezone(timedelta(hours=8))
 M15, H1, H4, D1 = 900_000, 3_600_000, 14_400_000, 86_400_000
 EXCLUDE = {"BTC", "ETH", "USDC", "FDUSD", "TUSD", "USDP", "DAI", "BUSD", "EUR", "USDE", "PAXG", "XAUT", "WBTC", "WBETH",
@@ -336,6 +340,58 @@ def signal_msg(s, last_close):
     return title, body
 
 
+# ───────────── 結果紀錄 ─────────────
+def outcome(a, t, h, l, c, now):
+    """進行中的訊號有沒有結束：('stop'|'target'|'timeout', R, 出場時間ms) 或 None。
+    同一根 15m 同時碰到止損與目標算止損（保守）。"""
+    m = t > a["bar"]
+    hit_s = np.flatnonzero(m & (l <= a["stop"]))
+    hit_t = np.flatnonzero(m & (h >= a["target"]))
+    fs = hit_s[0] if len(hit_s) else 10**9
+    ft = hit_t[0] if len(hit_t) else 10**9
+    if fs < 10**9 and fs <= ft:
+        return "stop", -1.0, int(t[fs])
+    if ft < 10**9:
+        return "target", 1.0, int(t[ft])
+    if now - a["bar"] > 12 * H1:
+        return "timeout", float((c[-1] - a["entry"]) / (a["entry"] - a["stop"])), now
+    return None
+
+
+def net_r(a, r):
+    """扣每邊 COST 後的 R（12 小時內結束，資金費忽略）。"""
+    return r - 2 * COST * a["entry"] / (a["entry"] - a["stop"])
+
+
+def record(a, kind, r, t_out):
+    tw = lambda ms: datetime.fromtimestamp(ms / 1000, TW).strftime("%Y-%m-%d %H:%M")
+    row = [tw(a["bar"] + M15), a["sym"], a.get("kind", "急跌"), a["score"], a.get("breadth", ""), fmt(a["entry"]), fmt(a["stop"]),
+           fmt(a["target"]), f"{(a['entry'] - a['stop']) / a['entry'] * 100:.3f}", kind, tw(t_out), f"{r:.4f}", f"{net_r(a, r):.4f}"]
+    new = not RESULTS.exists()
+    with RESULTS.open("a", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(RCOLS)
+        w.writerow(row)
+
+
+def results_summary(now, days=30):
+    """近 days 天已結束訊號的勝率與扣成本平均 R（每日狀態用）。"""
+    if not RESULTS.exists():
+        return "實際結果：還沒有已結束的訊號"
+    with RESULTS.open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    since = (datetime.fromtimestamp(now / 1000, TW) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
+    rs = [r for r in rows if r["出場_台灣"] >= since]
+    if not rs:
+        return f"實際結果：近 {days} 天沒有已結束的訊號（累計 {len(rows)} 筆）"
+    win = sum(r["結果"] == "target" for r in rs) / len(rs)
+    avg = sum(float(r["扣成本R"]) for r in rs) / len(rs)
+    be = sum(1 / 2 + COST * float(r["進場"]) / (float(r["進場"]) - float(r["止損"])) for r in rs) / len(rs)
+    return (f"實際結果（近 {days} 天 {len(rs)} 筆，累計 {len(rows)} 筆）：勝率 {win:.0%}，扣成本平均 {avg:+.2f}R"
+            f"（打平約需勝率 {be:.0%}；少於 30 筆看不出東西）")
+
+
 # ───────────── 主流程 ─────────────
 def load_state():
     try:
@@ -360,8 +416,29 @@ def status_msg(cands, btc, n_uni, now):
             f"BTC 4h 燈：{btc_light}\n"
             f"日線＋4h 都綠的幣：{green} 個\n"
             f"過去 24 小時：急跌候選 {len(dips)} 個，符合全部條件 {len(passed)} 個\n"
+            f"{results_summary(now)}\n"
             f"{hint}")
     return title, body
+
+
+def track(st, sym, t, h, l, c, now, dry):
+    """追蹤一個進行中的訊號；結束就通知、寫 results.csv、移出 active。"""
+    a = st["active"][sym]
+    res = outcome(a, t, h, l, c, now)
+    if res is None:
+        return
+    kind, r, t_out = res
+    name = sym.replace("USDT", "")
+    nr = net_r(a, r)
+    if kind == "stop":
+        send(f"【{name}】✗ 止損", f"止損 {fmt(a['stop'])}，這筆結束（-1R，扣成本 {nr:+.2f}R）", dry)
+    elif kind == "target":
+        send(f"【{name}】✓ 到目標", f"目標 {fmt(a['target'])}，這筆結束（+1R，扣成本 {nr:+.2f}R）", dry)
+    else:
+        send(f"【{name}】⏱ 12 小時未觸及", f"現價 {fmt(c[-1])}（{r:+.2f}R，扣成本 {nr:+.2f}R），這筆結束", dry)
+    if not dry:
+        record(a, kind, r, t_out)
+    del st["active"][sym]
 
 
 def run(dry):
@@ -385,25 +462,16 @@ def run(dry):
             continue
         cands += cs
         last_close[sym] = float(c[-1])
-        a = st["active"].get(sym)
-        if a:                                                   # 追蹤進行中的訊號
-            m = t > a["bar"]
-            hit_s = np.flatnonzero(m & (l <= a["stop"]))
-            hit_t = np.flatnonzero(m & (h >= a["target"]))
-            fs = hit_s[0] if len(hit_s) else 10**9
-            ft = hit_t[0] if len(hit_t) else 10**9
-            name = sym.replace("USDT", "")
-            if fs < 10**9 and fs <= ft:
-                send(f"【{name}】✗ 止損", f"止損 {fmt(a['stop'])}，這筆結束（-1R）", dry)
-                del st["active"][sym]
-            elif ft < 10**9:
-                send(f"【{name}】✓ 到目標", f"目標 {fmt(a['target'])}，這筆結束（+1R）", dry)
-                del st["active"][sym]
-            elif now - a["bar"] > 12 * H1:
-                r = (c[-1] - a["entry"]) / (a["entry"] - a["stop"])
-                send(f"【{name}】⏱ 12 小時未觸及", f"現價 {fmt(c[-1])}（{r:+.2f}R），這筆結束", dry)
-                del st["active"][sym]
+        if sym in st["active"]:
+            track(st, sym, t, h, l, c, now, dry)
         time.sleep(0.05)
+    # 幣池每天換：已經掉出幣池的進行中訊號也要追到結束，否則會永遠卡在「追蹤中」、同幣不再發訊號
+    for sym in [s for s in st["active"] if s not in uni]:
+        try:
+            t, _, h, l, c = kl(sym, "15m", 1000)
+            track(st, sym, t, h, l, c, now, dry)
+        except Exception as e:
+            print(sym, "追蹤失敗：", e)
     latest = {}
     for s in finalize(cands, since):
         latest[s["sym"]] = s                                    # 每個幣只取最新一筆

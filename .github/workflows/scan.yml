@@ -53,6 +53,7 @@ jobs:
             git pull -q --rebase || true                      # 拿到你在網頁上改的 config.json
             python scan.py || echo "這輪掃描失敗，下一輪再試"
             git add state.json
+            if [ -f results.csv ]; then git add results.csv; fi   # 每筆訊號的實際結果
             git diff --cached --quiet || { git commit -q -m "update state" && git push -q; } || echo "狀態推送失敗，下一輪再試"
             now=$(date +%s); next=$(( (now / 900 + 1) * 900 + 20 ))
             [ "$next" -lt "$end" ] || break
