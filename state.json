@@ -1,44 +1,5 @@
 {
  "active": {
-  "NEARUSDT": {
-   "sym": "NEARUSDT",
-   "bar": 1791815400000,
-   "entry": 5.577,
-   "stop": 5.459975737968535,
-   "target": 5.694024262031465,
-   "score": 5,
-   "items": [
-    "BTC4h綠",
-    "BTC急跌",
-    "波動大",
-    "在4h均線上",
-    "日線強"
-   ],
-   "res": null,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 12
-  },
-  "OPUSDT": {
-   "sym": "OPUSDT",
-   "bar": 1791815400000,
-   "entry": 0.135,
-   "stop": 0.13305417946024353,
-   "target": 0.13694582053975649,
-   "score": 4,
-   "items": [
-    "BTC4h綠",
-    "BTC急跌",
-    "4小時急跌",
-    "RSI很低"
-   ],
-   "res": 0.13927213069330768,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 12
-  },
   "ETHFIUSDT": {
    "sym": "ETHFIUSDT",
    "bar": 1791815400000,
@@ -93,6 +54,26 @@
     "在4h均線上"
    ],
    "res": 1.2057161992733045,
+   "kind": "急跌",
+   "stop_ok": true,
+   "res_ok": true,
+   "breadth": 8
+  },
+  "ZROUSDT": {
+   "sym": "ZROUSDT",
+   "bar": 1791823500000,
+   "entry": 2.205,
+   "stop": 2.1360584548506987,
+   "target": 2.2739415451493015,
+   "score": 5,
+   "items": [
+    "BTC急跌",
+    "波動大",
+    "4小時急跌",
+    "RSI很低",
+    "在4h均線上"
+   ],
+   "res": 2.2583484116983588,
    "kind": "急跌",
    "stop_ok": true,
    "res_ok": true,
