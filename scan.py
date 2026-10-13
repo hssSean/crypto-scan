@@ -445,6 +445,9 @@ def run(dry):
     st = load_state()
     st.setdefault("active", {})
     now = int(time.time() * 1000)
+    # 每個幣最後推過的訊號 K 線：回看 lookback 時，已推過（含已出結果）的同一根不再推；只留 2 天
+    sent = {k: v for k, v in st.get("sent", {}).items() if v >= now - 2 * D1}
+    st["sent"] = sent
     since = now - CFG["lookback_min"] * 60_000                  # 雲端排程可能延遲，往回看一段時間
     tw_now = datetime.now(TW)
     status_due = (CFG.get("daily_status", True) and tw_now.hour >= 8
@@ -478,8 +481,11 @@ def run(dry):
     for sym, s in latest.items():
         if sym in st["active"]:
             continue                                            # 一次一筆
+        if s["bar"] <= sent.get(sym, -1):
+            continue                                            # 這根已推過（可能剛出結果），不重推
         send(*signal_msg(s, last_close[sym]), dry)
         st["active"][sym] = s
+        sent[sym] = s["bar"]
         found += 1
     if status_due:
         send(*status_msg(cands, btc, len(uni), now), dry)
