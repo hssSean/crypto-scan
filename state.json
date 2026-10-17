@@ -1,25 +1,5 @@
 {
- "active": {
-  "ZKUSDT": {
-   "sym": "ZKUSDT",
-   "bar": 1792170000000,
-   "entry": 0.01653,
-   "stop": 0.015961324198650928,
-   "target": 0.01709867580134907,
-   "score": 4,
-   "items": [
-    "BTC急跌",
-    "波動大",
-    "在4h均線上",
-    "日線強"
-   ],
-   "res": 0.01702991696587824,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 6
-  }
- },
+ "active": {},
  "uni": [
   "SOLUSDT",
   "ZECUSDT",
