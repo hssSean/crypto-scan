@@ -18,26 +18,6 @@
    "stop_ok": true,
    "res_ok": true,
    "breadth": 5
-  },
-  "CRVUSDT": {
-   "sym": "CRVUSDT",
-   "bar": 1792645200000,
-   "entry": 0.3762,
-   "stop": 0.3695821486222965,
-   "target": 0.38281785137770347,
-   "score": 5,
-   "items": [
-    "BTC4h綠",
-    "BTC急跌",
-    "波動大",
-    "4小時急跌",
-    "RSI很低"
-   ],
-   "res": 0.3836293314837008,
-   "kind": "急跌",
-   "stop_ok": true,
-   "res_ok": true,
-   "breadth": 5
   }
  },
  "uni": [
