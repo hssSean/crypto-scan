@@ -7,6 +7,8 @@
   "lookback_min": 60,
   "skip_near_resistance": true,
   "shallow_pullback": true,
-  "min_breadth": 4,
+  "min_breadth": 13,
+  "wash_breadth": 25,
+  "mid_min_score": 6,
   "daily_status": true
 }

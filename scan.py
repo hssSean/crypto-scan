@@ -283,7 +283,11 @@ def finalize(cands, since_ms):
             continue
         s["breadth"] = len({sym for b, sym in dips if s["bar"] - H1 <= b <= s["bar"]})
         if s["kind"] == "急跌":
-            if s["score"] < CFG["min_score"] or s["breadth"] < CFG.get("min_breadth", 1):
+            # 廣度分層：≥wash_breadth（洗盤）用 min_score；min_breadth～wash_breadth-1 要 mid_min_score
+            # 回測（前 100）：4–24 個幣同時急跌勝率 50–54%、≈0R，優勢幾乎都在 ≥25（68%、+0.30R）
+            wash = s["breadth"] >= CFG.get("wash_breadth", 25)
+            need = CFG["min_score"] if wash else max(CFG.get("mid_min_score", 0), CFG["min_score"])
+            if s["score"] < need or s["breadth"] < CFG.get("min_breadth", 1):
                 continue
         elif s["score"] < max(6, CFG["min_score"]):
             continue
@@ -325,10 +329,12 @@ def signal_msg(s, last_close):
     b = s.get("breadth", 0)
     if kind != "急跌":
         rate = "約 58–65%"
-    elif b >= 25:
-        kind, rate = "🔥全市場洗盤", "約 66–74%" if s["score"] >= 5 else "約 66–70%"
+    elif b >= CFG.get("wash_breadth", 25):
+        kind, rate = "🔥全市場洗盤", {4: "約 57–62%", 5: "約 67–71%", 6: "約 68–75%"}.get(s["score"], "約 79–81%")
+    elif b >= 13:
+        rate = "約 50–55%，回測≈打平" if s["score"] < 7 else "約 41–60%，樣本少"
     else:
-        rate = wr(s["score"]) if b < 4 else {4: "約 57–60%", 5: "約 59–63%"}.get(s["score"], "約 62–66%")
+        rate = wr(s["score"]) if b < 4 else "約 50–57%，回測≈打平"
     title = f"【{s['sym'].replace('USDT', '')} 做多・{kind}】加分 {s['score']}/8（歷史勝率{rate}）"
     body = (f"訊號 K 線收盤：{bar}（台灣）\n"
             f"進場 {fmt(s['entry'])}｜止損 {fmt(s['stop'])}（{-rk / s['entry']:+.2%}）｜目標 {fmt(s['target'])}\n"
@@ -515,7 +521,7 @@ def replay(days):
     for s in allsig:
         print(datetime.fromtimestamp((s["bar"] + M15) / 1000, TW).strftime("%m/%d %H:%M"), s["sym"], s["kind"], f"{s['score']}/8",
               f"同時急跌 {s['breadth']} 個", "進場", fmt(s["entry"]), "止損", fmt(s["stop"]))
-    print(f"\n最近 {days} 天（最低加分 {CFG['min_score']}、同時急跌 ≥{CFG.get('min_breadth', 1)}）：{len(allsig)} 個訊號，"
+    print(f"\n最近 {days} 天（最低加分 {CFG['min_score']}、同時急跌 ≥{CFG.get('min_breadth', 1)}，未達 {CFG.get('wash_breadth', 25)} 個要加分 ≥{CFG.get('mid_min_score', 0)}）：{len(allsig)} 個訊號，"
           f"平均每天 {len(allsig) / days:.1f} 個，其中全市場洗盤（≥25）{sum(s['breadth'] >= 25 for s in allsig)} 個")
 
 
