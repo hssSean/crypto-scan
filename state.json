@@ -1,5 +1,27 @@
 {
- "active": {},
+ "active": {
+  "PEPEUSDT": {
+   "sym": "PEPEUSDT",
+   "bar": 1793305800000,
+   "entry": 4.89e-06,
+   "stop": 4.711609084681409e-06,
+   "target": 5.068390915318591e-06,
+   "score": 6,
+   "items": [
+    "BTC4h綠",
+    "BTC急跌",
+    "波動大",
+    "4小時急跌",
+    "在4h均線上",
+    "日線強"
+   ],
+   "res": null,
+   "kind": "淺回調",
+   "stop_ok": true,
+   "res_ok": true,
+   "breadth": 0
+  }
+ },
  "uni": [
   "SOLUSDT",
   "ZECUSDT",
@@ -104,5 +126,7 @@
  ],
  "uni_date": "2026-10-29",
  "status_date": "2026-10-29",
- "sent": {}
+ "sent": {
+  "PEPEUSDT": 1793305800000
+ }
 }
